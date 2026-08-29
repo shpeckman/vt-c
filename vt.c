@@ -243,153 +243,225 @@ static inline void vt_enter_action(vt_parser_t *parser, vt_state_t state) {
   }
 }
 
-static inline void vt_perform_action(vt_parser_t *parser, vt_act_t action,
-                                     uint8_t ch) {
-  switch (action) {
-  case VT_ACT_PRN:
-    if (parser->cb && parser->cb->print)
-      parser->cb->print(parser, ch);
-    break;
-  case VT_ACT_EXEC:
-    if (parser->cb && parser->cb->execute)
-      parser->cb->execute(parser, ch);
-    break;
-  case VT_ACT_CLR:
-    parser->intermediates_len = 0;
-    parser->params_len = 0;
-    parser->ignore = false;
-    if (parser->cb && parser->cb->clear)
-      parser->cb->clear(parser);
-    break;
-  case VT_ACT_COLL:
-    if (parser->intermediates_len < 8) {
-      parser->intermediates[parser->intermediates_len++] = ch;
-    } else {
-      parser->ignore = true;
-    }
-    if (parser->cb && parser->cb->collect)
-      parser->cb->collect(parser, ch);
-    break;
-  case VT_ACT_PRM:
-    if (parser->ignore) {
-      if (parser->cb && parser->cb->param)
-        parser->cb->param(parser, ch);
-    } else {
-      if (ch == ';') {
-        if (parser->params_len == 0) {
-          parser->params[0] = (vt_param_t){-1, false};
-          parser->params[1] = (vt_param_t){-1, false};
-          parser->params_len = 2;
-        } else if (parser->params_len < 64) {
-          parser->params[parser->params_len++] = (vt_param_t){-1, false};
-        } else {
-          parser->ignore = true;
-        }
-      } else if (ch == ':') {
-        if (parser->params_len == 0) {
-          parser->params[0] = (vt_param_t){-1, false};
-          parser->params[1] = (vt_param_t){-1, true};
-          parser->params_len = 2;
-        } else if (parser->params_len < 64) {
-          parser->params[parser->params_len++] = (vt_param_t){-1, true};
-        } else {
-          parser->ignore = true;
-        }
-      } else {
-        if (parser->params_len == 0) {
-          parser->params_len = 1;
-          parser->params[0] = (vt_param_t){-1, false};
-        }
-        if (parser->params_len <= 64) {
-          int32_t val = parser->params[parser->params_len - 1].value;
-          bool sub = parser->params[parser->params_len - 1].sub;
-          if (val == -1)
-            val = 0;
-          if (val <= (2147483647 - 9) / 10) {
-            parser->params[parser->params_len - 1].value =
-                val * 10 + (ch - '0');
-            parser->params[parser->params_len - 1].sub = sub;
-          } else {
-            parser->params[parser->params_len - 1].value = 2147483647;
-            parser->params[parser->params_len - 1].sub = sub;
-          }
-        }
-      }
-      if (parser->cb && parser->cb->param)
-        parser->cb->param(parser, ch);
-    }
-    break;
-  case VT_ACT_ESC_DISP:
-    if (parser->cb && parser->cb->esc_dispatch)
-      parser->cb->esc_dispatch(parser, ch, parser->intermediates,
-                               parser->intermediates_len, parser->ignore);
-    break;
-  case VT_ACT_CSI_DISP:
-    if (parser->cb && parser->cb->csi_dispatch)
-      parser->cb->csi_dispatch(parser, ch, parser->params, parser->params_len,
-                               parser->intermediates, parser->intermediates_len,
-                               parser->ignore);
-    break;
-  case VT_ACT_HOOK:
-    if (parser->cb && parser->cb->hook)
-      parser->cb->hook(parser, ch, parser->params, parser->params_len,
-                       parser->intermediates, parser->intermediates_len,
-                       parser->ignore);
-    break;
-  case VT_ACT_PUT:
-    if (parser->cb && parser->cb->put)
-      parser->cb->put(parser, ch);
-    break;
-  case VT_ACT_STR_PUT:
-    switch (parser->state) {
-    case VT_STATE_OSC_STR:
-      if (parser->cb && parser->cb->osc_put)
-        parser->cb->osc_put(parser, ch);
-      break;
-    case VT_STATE_SOS_STR:
-      if (parser->cb && parser->cb->sos_put)
-        parser->cb->sos_put(parser, ch);
-      break;
-    case VT_STATE_PM_STR:
-      if (parser->cb && parser->cb->pm_put)
-        parser->cb->pm_put(parser, ch);
-      break;
-    case VT_STATE_APC_STR:
-      if (parser->cb && parser->cb->apc_put)
-        parser->cb->apc_put(parser, ch);
-      break;
-    default:
-      break;
-    }
-    break;
-  case VT_ACT_IGN:
-  case VT_ACT_NONE:
-  case VT_ACT_UNHK:
-    break;
-  }
-}
+#if defined(__GNUC__) || defined(__clang__)
+#define VT_COMPUTED_GOTO 1
+#endif
 
-static inline void vt_advance(vt_parser_t *parser, uint8_t ch) {
-  uint8_t transition = vt_table[parser->state][ch];
-  vt_act_t action = (vt_act_t)(transition >> 4);
-  vt_state_t next_state = (vt_state_t)(transition & 0x0F);
+void vt_parse(vt_parser_t *parser, const uint8_t *bytes, size_t len) {
+  if (len == 0)
+    return;
+
+  const uint8_t *p = bytes;
+  const uint8_t *end = bytes + len;
+  uint8_t ch;
+  uint8_t transition;
+  vt_act_t action;
+  vt_state_t next_state;
+
+#ifdef VT_COMPUTED_GOTO
+  static const void *dispatch_table[16] = {
+      [VT_ACT_NONE] = &&do_none,
+      [VT_ACT_IGN] = &&do_ign,
+      [VT_ACT_PRN] = &&do_prn,
+      [VT_ACT_EXEC] = &&do_exec,
+      [VT_ACT_CLR] = &&do_clr,
+      [VT_ACT_COLL] = &&do_coll,
+      [VT_ACT_PRM] = &&do_prm,
+      [VT_ACT_ESC_DISP] = &&do_esc_disp,
+      [VT_ACT_CSI_DISP] = &&do_csi_disp,
+      [VT_ACT_HOOK] = &&do_hook,
+      [VT_ACT_PUT] = &&do_put,
+      [VT_ACT_UNHK] = &&do_unhk,
+      [VT_ACT_STR_PUT] = &&do_str_put,
+      [13] = &&do_none, /* Safety padding */
+      [14] = &&do_none, /* Safety padding */
+      [15] = &&do_none  /* Safety padding */
+  };
+#define DISPATCH() goto *dispatch_table[action]
+#else
+#define DISPATCH()                                                             \
+  switch (action) {                                                            \
+  case VT_ACT_NONE:                                                            \
+    goto do_none;                                                              \
+  case VT_ACT_IGN:                                                             \
+    goto do_ign;                                                               \
+  case VT_ACT_PRN:                                                             \
+    goto do_prn;                                                               \
+  case VT_ACT_EXEC:                                                            \
+    goto do_exec;                                                              \
+  case VT_ACT_CLR:                                                             \
+    goto do_clr;                                                               \
+  case VT_ACT_COLL:                                                            \
+    goto do_coll;                                                              \
+  case VT_ACT_PRM:                                                             \
+    goto do_prm;                                                               \
+  case VT_ACT_ESC_DISP:                                                        \
+    goto do_esc_disp;                                                          \
+  case VT_ACT_CSI_DISP:                                                        \
+    goto do_csi_disp;                                                          \
+  case VT_ACT_HOOK:                                                            \
+    goto do_hook;                                                              \
+  case VT_ACT_PUT:                                                             \
+    goto do_put;                                                               \
+  case VT_ACT_UNHK:                                                            \
+    goto do_unhk;                                                              \
+  case VT_ACT_STR_PUT:                                                         \
+    goto do_str_put;                                                           \
+  default:                                                                     \
+    goto do_none;                                                              \
+  }
+#endif
+
+next_char:
+  if (p >= end)
+    return;
+  ch = *p++;
+  transition = vt_table[parser->state][ch];
+  action = (vt_act_t)(transition >> 4);
+  next_state = (vt_state_t)(transition & 0x0F);
 
   if (parser->state != next_state) {
     vt_exit_action(parser, parser->state);
   }
 
-  vt_perform_action(parser, action, ch);
+  DISPATCH();
 
+do_prn:
+  if (parser->cb && parser->cb->print)
+    parser->cb->print(parser, ch);
+  goto state_transition;
+
+do_exec:
+  if (parser->cb && parser->cb->execute)
+    parser->cb->execute(parser, ch);
+  goto state_transition;
+
+do_clr:
+  parser->intermediates_len = 0;
+  parser->params_len = 0;
+  parser->ignore = false;
+  if (parser->cb && parser->cb->clear)
+    parser->cb->clear(parser);
+  goto state_transition;
+
+do_coll:
+  if (parser->intermediates_len < 8) {
+    parser->intermediates[parser->intermediates_len++] = ch;
+  } else {
+    parser->ignore = true;
+  }
+  if (parser->cb && parser->cb->collect)
+    parser->cb->collect(parser, ch);
+  goto state_transition;
+
+do_prm:
+  if (parser->ignore) {
+    if (parser->cb && parser->cb->param)
+      parser->cb->param(parser, ch);
+  } else {
+    if (ch == ';') {
+      if (parser->params_len == 0) {
+        parser->params[0] = (vt_param_t){-1, false};
+        parser->params[1] = (vt_param_t){-1, false};
+        parser->params_len = 2;
+      } else if (parser->params_len < 64) {
+        parser->params[parser->params_len++] = (vt_param_t){-1, false};
+      } else {
+        parser->ignore = true;
+      }
+    } else if (ch == ':') {
+      if (parser->params_len == 0) {
+        parser->params[0] = (vt_param_t){-1, false};
+        parser->params[1] = (vt_param_t){-1, true};
+        parser->params_len = 2;
+      } else if (parser->params_len < 64) {
+        parser->params[parser->params_len++] = (vt_param_t){-1, true};
+      } else {
+        parser->ignore = true;
+      }
+    } else {
+      if (parser->params_len == 0) {
+        parser->params_len = 1;
+        parser->params[0] = (vt_param_t){-1, false};
+      }
+      if (parser->params_len <= 64) {
+        int32_t val = parser->params[parser->params_len - 1].value;
+        bool sub = parser->params[parser->params_len - 1].sub;
+        if (val == -1)
+          val = 0;
+        if (val <= (2147483647 - 9) / 10) {
+          parser->params[parser->params_len - 1].value = val * 10 + (ch - '0');
+          parser->params[parser->params_len - 1].sub = sub;
+        } else {
+          parser->params[parser->params_len - 1].value = 2147483647;
+          parser->params[parser->params_len - 1].sub = sub;
+        }
+      }
+    }
+    if (parser->cb && parser->cb->param)
+      parser->cb->param(parser, ch);
+  }
+  goto state_transition;
+
+do_esc_disp:
+  if (parser->cb && parser->cb->esc_dispatch)
+    parser->cb->esc_dispatch(parser, ch, parser->intermediates,
+                             parser->intermediates_len, parser->ignore);
+  goto state_transition;
+
+do_csi_disp:
+  if (parser->cb && parser->cb->csi_dispatch)
+    parser->cb->csi_dispatch(parser, ch, parser->params, parser->params_len,
+                             parser->intermediates, parser->intermediates_len,
+                             parser->ignore);
+  goto state_transition;
+
+do_hook:
+  if (parser->cb && parser->cb->hook)
+    parser->cb->hook(parser, ch, parser->params, parser->params_len,
+                     parser->intermediates, parser->intermediates_len,
+                     parser->ignore);
+  goto state_transition;
+
+do_put:
+  if (parser->cb && parser->cb->put)
+    parser->cb->put(parser, ch);
+  goto state_transition;
+
+do_str_put:
+  switch (parser->state) {
+  case VT_STATE_OSC_STR:
+    if (parser->cb && parser->cb->osc_put)
+      parser->cb->osc_put(parser, ch);
+    break;
+  case VT_STATE_SOS_STR:
+    if (parser->cb && parser->cb->sos_put)
+      parser->cb->sos_put(parser, ch);
+    break;
+  case VT_STATE_PM_STR:
+    if (parser->cb && parser->cb->pm_put)
+      parser->cb->pm_put(parser, ch);
+    break;
+  case VT_STATE_APC_STR:
+    if (parser->cb && parser->cb->apc_put)
+      parser->cb->apc_put(parser, ch);
+    break;
+  default:
+    break;
+  }
+  goto state_transition;
+
+do_none:
+do_ign:
+do_unhk:
+  goto state_transition;
+
+state_transition:
   if (parser->state != next_state) {
     vt_enter_action(parser, next_state);
     parser->state = next_state;
   }
-}
-
-void vt_parse(vt_parser_t *parser, const uint8_t *bytes, size_t len) {
-  for (size_t i = 0; i < len; i++) {
-    vt_advance(parser, bytes[i]);
-  }
+  goto next_char;
 }
 
 void vt_utf8_init(vt_utf8_t *utf8) {
