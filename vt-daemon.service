@@ -1,0 +1,14 @@
+# vt-daemon.service
+[Unit]
+Description=Virtual Terminal (VT) Escape Sequence Parser Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/vt-daemon -s /tmp/vt.sock
+Restart=on-failure
+RestartSec=2
+SyslogIdentifier=vt-daemon
+
+[Install]
+WantedBy=multi-user.target

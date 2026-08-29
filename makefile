@@ -4,6 +4,7 @@ CFLAGS ?= -O3 -Wall -Wextra -std=c99 -D_XOPEN_SOURCE=700 -Iinclude
 
 PREFIX ?= /usr/local
 BIN_DIR = bin
+SYSTEMD_DIR ?= /etc/systemd/system
 
 BENCH_CFLAGS = $(CFLAGS) -flto -march=native
 
@@ -47,9 +48,14 @@ daemon: $(BIN_DIR)/vt-daemon
 install: daemon
 	@install -d $(DESTDIR)$(PREFIX)/bin
 	@install -m 755 $(BIN_DIR)/vt-daemon $(DESTDIR)$(PREFIX)/bin/vt-daemon
+	@if [ -d $(DESTDIR)$(SYSTEMD_DIR) ] || [ -z "$(DESTDIR)" ]; then \
+		install -d $(DESTDIR)$(SYSTEMD_DIR); \
+		install -m 644 vt-daemon.service $(DESTDIR)$(SYSTEMD_DIR)/vt-daemon.service; \
+	fi
 
 uninstall:
 	@rm -f $(DESTDIR)$(PREFIX)/bin/vt-daemon
+	@rm -f $(DESTDIR)$(SYSTEMD_DIR)/vt-daemon.service
 
 clean:
 	@rm -rf $(BIN_DIR)
