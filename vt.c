@@ -1,12 +1,12 @@
 // vt.c
 #include "vt.h"
 
-static uint8_t vt_table[16][256];
+static uint8_t vt_table[4096];
 static bool vt_table_initialized = false;
 
 #define VT_TRANS(st, start, end, act, nxt)                                     \
   for (int i = (start); i <= (end); i++) {                                     \
-    vt_table[st][i] = (uint8_t)(((act) << 4) | (nxt));                         \
+    vt_table[((st) << 8) | i] = (uint8_t)(((act) << 4) | (nxt));               \
   }
 
 #define VT_ANY(start, end, act, nxt)                                           \
@@ -311,50 +311,19 @@ void vt_parse(vt_parser_t *parser, const uint8_t *bytes, size_t len) {
 
     if (state == VT_STATE_GND) {
       if (cb_print) {
-        while (p < end && *p >= 0x20) cb_print(parser, *p++);
-      } else {
-        while (p < end && *p >= 0x20) p++;
-      }
-      if (p >= end) break;
-    } else if (state == VT_STATE_CSI_PRM && !parser->ignore) {
-      if (cb_param) {
         while (p < end) {
           uint8_t c = *p;
-          if (parser->params_len == 0) break; 
-          if (c >= '0' && c <= '9') {
-            vt_param_t *prm = &parser->params[parser->params_len - 1];
-            int32_t val = prm->value;
-            if (val == -1) val = 0;
-            if (val <= 214748363) prm->value = val * 10 + (c - '0');
-            else prm->value = 2147483647;
-            cb_param(parser, c);
+          if (c >= 0x20) {
+            cb_print(parser, c);
             p++;
-          } else if (c == ';') {
-            if (parser->params_len < 64) {
-              parser->params[parser->params_len].value = -1;
-              parser->params[parser->params_len].sub = false;
-              parser->params_len++;
-            } else {
-              parser->ignore = true;
-              cb_param(parser, c);
-              p++;
-              break;
-            }
-            cb_param(parser, c);
-            p++;
-          } else if (c == ':') {
-            if (parser->params_len < 64) {
-              parser->params[parser->params_len].value = -1;
-              parser->params[parser->params_len].sub = true;
-              parser->params_len++;
-            } else {
-              parser->ignore = true;
-              cb_param(parser, c);
-              p++;
-              break;
-            }
-            cb_param(parser, c);
-            p++;
+          } else if (c == 0x1B && (p + 1 < end) && p[1] == '[') {
+            p += 2;
+            parser->intermediates_len = 0;
+            parser->params_len = 0;
+            parser->ignore = false;
+            if (cb_clear) cb_clear(parser);
+            state = VT_STATE_CSI_ENT;
+            goto fast_path_continue;
           } else {
             break;
           }
@@ -362,44 +331,90 @@ void vt_parse(vt_parser_t *parser, const uint8_t *bytes, size_t len) {
       } else {
         while (p < end) {
           uint8_t c = *p;
-          if (parser->params_len == 0) break;
-          if (c >= '0' && c <= '9') {
-            vt_param_t *prm = &parser->params[parser->params_len - 1];
-            int32_t val = prm->value;
-            if (val == -1) val = 0;
-            if (val <= 214748363) prm->value = val * 10 + (c - '0');
-            else prm->value = 2147483647;
+          if (c >= 0x20) {
             p++;
-          } else if (c == ';') {
-            if (parser->params_len < 64) {
-              parser->params[parser->params_len].value = -1;
-              parser->params[parser->params_len].sub = false;
-              parser->params_len++;
-            } else {
-              parser->ignore = true;
-              p++;
-              break;
-            }
-            p++;
-          } else if (c == ':') {
-            if (parser->params_len < 64) {
-              parser->params[parser->params_len].value = -1;
-              parser->params[parser->params_len].sub = true;
-              parser->params_len++;
-            } else {
-              parser->ignore = true;
-              p++;
-              break;
-            }
-            p++;
+          } else if (c == 0x1B && (p + 1 < end) && p[1] == '[') {
+            p += 2;
+            parser->intermediates_len = 0;
+            parser->params_len = 0;
+            parser->ignore = false;
+            if (cb_clear) cb_clear(parser);
+            state = VT_STATE_CSI_ENT;
+            goto fast_path_continue;
           } else {
             break;
           }
         }
       }
       if (p >= end) break;
-    } else if (state == VT_STATE_OSC_STR || state == VT_STATE_SOS_STR ||
-               state == VT_STATE_PM_STR || state == VT_STATE_APC_STR) {
+    }
+
+    if (state == VT_STATE_CSI_PRM || state == VT_STATE_CSI_ENT) {
+      while (p < end) {
+        uint8_t c = *p;
+        if (c >= '0' && c <= '9') {
+          if (state == VT_STATE_CSI_ENT || parser->params_len == 0) {
+            state = VT_STATE_CSI_PRM;
+            parser->params_len = 1;
+            parser->params[0].value = -1;
+            parser->params[0].sub = false;
+          }
+          if (!parser->ignore) {
+            vt_param_t *prm = &parser->params[parser->params_len - 1];
+            int32_t val = prm->value;
+            if (val == -1) val = 0;
+            if (val <= 214748363) prm->value = val * 10 + (c - '0');
+            else prm->value = 2147483647;
+          }
+          if (cb_param) cb_param(parser, c);
+          p++;
+        } else if (c == ';' || c == ':') {
+          if (state == VT_STATE_CSI_ENT || parser->params_len == 0) {
+            state = VT_STATE_CSI_PRM;
+            parser->params[0].value = -1;
+            parser->params[0].sub = false;
+            parser->params[1].value = -1;
+            parser->params[1].sub = (c == ':');
+            parser->params_len = 2;
+          } else if (!parser->ignore) {
+            if (parser->params_len < 64) {
+              parser->params[parser->params_len].value = -1;
+              parser->params[parser->params_len].sub = (c == ':');
+              parser->params_len++;
+            } else {
+              parser->ignore = true;
+            }
+          }
+          if (cb_param) cb_param(parser, c);
+          p++;
+        } else if (c >= 0x40 && c <= 0x7E) {
+          if (cb_csi_dispatch) {
+            cb_csi_dispatch(parser, c, parser->params, parser->params_len,
+                            parser->intermediates, parser->intermediates_len,
+                            parser->ignore);
+          }
+          state = VT_STATE_GND;
+          p++;
+          goto fast_path_continue;
+        } else if (c >= 0x20 && c <= 0x2F) {
+          if (parser->intermediates_len < 8) {
+            parser->intermediates[parser->intermediates_len++] = c;
+          } else {
+            parser->ignore = true;
+          }
+          if (cb_collect) cb_collect(parser, c);
+          state = VT_STATE_CSI_INT;
+          p++;
+          break;
+        } else {
+          break;
+        }
+      }
+      if (p >= end) break;
+    }
+
+    if (state == VT_STATE_OSC_STR || state == VT_STATE_SOS_STR ||
+        state == VT_STATE_PM_STR || state == VT_STATE_APC_STR) {
       void (*cb_str_put)(vt_parser_t *, uint8_t) = NULL;
       if (cb) {
         if (state == VT_STATE_OSC_STR) cb_str_put = cb->osc_put;
@@ -413,7 +428,9 @@ void vt_parse(vt_parser_t *parser, const uint8_t *bytes, size_t len) {
         while (p < end && *p >= 0x20) p++;
       }
       if (p >= end) break;
-    } else if (state == VT_STATE_DCS_PASS) {
+    }
+
+    if (state == VT_STATE_DCS_PASS) {
       if (cb_put) {
         while (p < end && *p >= 0x20 && *p != 0x7F) cb_put(parser, *p++);
       } else {
@@ -423,7 +440,7 @@ void vt_parse(vt_parser_t *parser, const uint8_t *bytes, size_t len) {
     }
 
     uint8_t ch = *p++;
-    uint8_t transition = vt_table[state][ch];
+    uint8_t transition = vt_table[(state << 8) | ch];
     vt_act_t action = (vt_act_t)(transition >> 4);
     vt_state_t next_state = (vt_state_t)(transition & 0x0F);
 
@@ -561,6 +578,9 @@ void vt_parse(vt_parser_t *parser, const uint8_t *bytes, size_t len) {
       vt_enter_action(parser, next_state);
       state = next_state;
     }
+
+  fast_path_continue:
+    continue;
   }
 
   parser->state = state;
