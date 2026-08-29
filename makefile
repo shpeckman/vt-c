@@ -20,25 +20,29 @@ all: test bench clean
 
 # Create the bin directory
 $(BIN_DIR):
-	mkdir -p $(BIN_DIR)
+	@mkdir -p $(BIN_DIR)
 
 # The pipe (|) makes the directory an order-only prerequisite, 
 # so its timestamp changing doesn't force recompilation.
 $(BIN_DIR)/vt.o: vt.c vt.h | $(BIN_DIR)
-	$(CC) $(CFLAGS) -c vt.c -o $(BIN_DIR)/vt.o
+	@$(CC) $(CFLAGS) -c vt.c -o $(BIN_DIR)/vt.o
 
 $(BIN_DIR)/test_bin: test.c $(BIN_DIR)/vt.o | $(BIN_DIR)
-	$(CC) $(CFLAGS) test.c $(BIN_DIR)/vt.o -o $(BIN_DIR)/test_bin
+	@$(CC) $(CFLAGS) test.c $(BIN_DIR)/vt.o -o $(BIN_DIR)/test_bin
 
 # Compile bench and vt together with LTO
 $(BIN_DIR)/bench_bin: bench.c vt.c | $(BIN_DIR)
-	$(CC) $(BENCH_CFLAGS) vt.c bench.c -o $(BIN_DIR)/bench_bin
+	@$(CC) $(BENCH_CFLAGS) vt.c bench.c -o $(BIN_DIR)/bench_bin
 
 test: $(BIN_DIR)/test_bin
+	@echo
 	./$(BIN_DIR)/test_bin
+	@echo
 
 bench: $(BIN_DIR)/bench_bin
+	@echo
 	./$(BIN_DIR)/bench_bin
-
+	@echo
+	
 clean:
-	rm -rf $(BIN_DIR)
+	@rm -rf $(BIN_DIR)
