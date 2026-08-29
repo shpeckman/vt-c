@@ -1,8 +1,6 @@
 # makefile
 CC ?= gcc
-# Changed to _XOPEN_SOURCE=700 to ensure POSIX.1-2008 standard features 
-# like fdopen() and network socket structures are natively exposed.
-CFLAGS ?= -O3 -Wall -Wextra -std=c99 -D_XOPEN_SOURCE=700
+CFLAGS ?= -O3 -Wall -Wextra -std=c99 -D_XOPEN_SOURCE=700 -Iinclude
 
 BIN_DIR = bin
 
@@ -20,29 +18,29 @@ all: test bench cli clean
 $(BIN_DIR):
 	@mkdir -p $(BIN_DIR)
 
-$(BIN_DIR)/vt.o: vt.c vt.h | $(BIN_DIR)
-	@$(CC) $(CFLAGS) -c vt.c -o $(BIN_DIR)/vt.o
+$(BIN_DIR)/vt.o: src/vt.c include/vt.h | $(BIN_DIR)
+	@$(CC) $(CFLAGS) -c src/vt.c -o $(BIN_DIR)/vt.o
 
-$(BIN_DIR)/test_bin: test.c $(BIN_DIR)/vt.o | $(BIN_DIR)
-	@$(CC) $(CFLAGS) test.c $(BIN_DIR)/vt.o -o $(BIN_DIR)/test_bin
+$(BIN_DIR)/vt_test: t/vt_test.c $(BIN_DIR)/vt.o | $(BIN_DIR)
+	@$(CC) $(CFLAGS) t/vt_test.c $(BIN_DIR)/vt.o -o $(BIN_DIR)/vt_test
 
-$(BIN_DIR)/bench_bin: bench.c vt.c | $(BIN_DIR)
-	@$(CC) $(BENCH_CFLAGS) vt.c bench.c -o $(BIN_DIR)/bench_bin
+$(BIN_DIR)/vt_bench: t/vt_bench.c src/vt.c include/vt.h | $(BIN_DIR)
+	@$(CC) $(BENCH_CFLAGS) src/vt.c t/vt_bench.c -o $(BIN_DIR)/vt_bench
 
-$(BIN_DIR)/cli_bin: cli.c $(BIN_DIR)/vt.o | $(BIN_DIR)
-	@$(CC) $(CFLAGS) cli.c $(BIN_DIR)/vt.o -o $(BIN_DIR)/cli_bin
+$(BIN_DIR)/vt-cli: src/vt-cli.c $(BIN_DIR)/vt.o | $(BIN_DIR)
+	@$(CC) $(CFLAGS) src/vt-cli.c $(BIN_DIR)/vt.o -o $(BIN_DIR)/vt-cli
 
-test: $(BIN_DIR)/test_bin
+test: $(BIN_DIR)/vt_test
 	@echo
-	./$(BIN_DIR)/test_bin
+	./$(BIN_DIR)/vt_test
 	@echo
 
-bench: $(BIN_DIR)/bench_bin
+bench: $(BIN_DIR)/vt_bench
 	@echo
-	./$(BIN_DIR)/bench_bin
+	./$(BIN_DIR)/vt_bench
 	@echo
 	
-cli: $(BIN_DIR)/cli_bin
+cli: $(BIN_DIR)/vt-cli
 
 clean:
 	@rm -rf $(BIN_DIR)

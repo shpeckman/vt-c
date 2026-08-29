@@ -1,4 +1,4 @@
-// bench.c
+// t/vt_bench.c
 #include "vt.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -10,7 +10,6 @@
 #include <mach/mach_time.h>
 #endif
 
-// Empty callbacks for zero-allocation benchmark
 static vt_callbacks_t bench_cb = {0};
 
 static double get_time_sec(void) {
@@ -46,7 +45,6 @@ static void run_bench(const char *name, const char *payload) {
   int iters = 0;
   double elapsed = 0;
 
-  // Run for approx 1 second
   while (elapsed < 1.0) {
     for (int i = 0; i < 1000; i++) {
       vt_parse(&parser, (const uint8_t *)payload, len);

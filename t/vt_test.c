@@ -1,4 +1,4 @@
-// test.c
+// t/vt_test.c
 #include "vt.h"
 #include <assert.h>
 #include <stdarg.h>
@@ -181,7 +181,7 @@ static void test_csi_ignore_limit() {
   strcat(seq, "m");
 
   vt_parse(&parser, (const uint8_t *)seq, strlen(seq));
-  assert(strstr(event_log, "true)") != NULL); // Ignore flag should be true
+  assert(strstr(event_log, "true)") != NULL);
 }
 
 static void test_osc_string() {
@@ -235,11 +235,9 @@ static void test_utf8_decoder() {
 
   vt_utf8_init(&utf8);
 
-  // Single byte 'a'
   ready = vt_utf8_decode(&utf8, 97, &cp);
   assert(ready && cp == 97);
 
-  // Multi-byte '€' (E2 82 AC)
   ready = vt_utf8_decode(&utf8, 0xE2, &cp);
   assert(!ready);
   ready = vt_utf8_decode(&utf8, 0x82, &cp);
@@ -247,7 +245,6 @@ static void test_utf8_decoder() {
   ready = vt_utf8_decode(&utf8, 0xAC, &cp);
   assert(ready && cp == 0x20AC);
 
-  // 4-byte '🚀' (F0 9F 9A 80)
   ready = vt_utf8_decode(&utf8, 0xF0, &cp);
   assert(!ready);
   ready = vt_utf8_decode(&utf8, 0x9F, &cp);
@@ -257,7 +254,6 @@ static void test_utf8_decoder() {
   ready = vt_utf8_decode(&utf8, 0x80, &cp);
   assert(ready && cp == 0x1F680);
 
-  // Invalid starting byte
   ready = vt_utf8_decode(&utf8, 0xFF, &cp);
   assert(ready && cp == 0xFFFD);
 }
