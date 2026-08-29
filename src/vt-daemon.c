@@ -1,6 +1,5 @@
-// src/vt-cli.c
+// src/vt-daemon.c
 #include "vt.h"
-#include <netinet/in.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -190,16 +189,9 @@ static vt_callbacks_t json_cb = {
     .apc_end = cb_apc_end,
 };
 
-static void run_parser(int in_fd, int out_fd) {
+static void run_parser(int fd) {
   client_ctx_t ctx;
-  bool is_stdio = (out_fd == STDOUT_FILENO);
-
-  if (is_stdio) {
-    ctx.out = stdout;
-  } else {
-    ctx.out = fdopen(dup(out_fd), "w");
-  }
-
+  ctx.out = fdopen(dup(fd), "w");
   setvbuf(ctx.out, NULL, _IOLBF, 0);
 
   vt_parser_t parser;
@@ -207,56 +199,11 @@ static void run_parser(int in_fd, int out_fd) {
 
   uint8_t buf[4096];
   ssize_t n;
-  while ((n = read(in_fd, buf, sizeof(buf))) > 0) {
+  while ((n = read(fd, buf, sizeof(buf))) > 0) {
     vt_parse(&parser, buf, n);
   }
 
-  if (!is_stdio) {
-    fclose(ctx.out);
-  }
-}
-
-static void daemonize_tcp(int port) {
-  int s = socket(AF_INET, SOCK_STREAM, 0);
-  if (s < 0) {
-    perror("socket");
-    exit(1);
-  }
-
-  int opt = 1;
-  setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-  struct sockaddr_in addr;
-  memset(&addr, 0, sizeof(addr));
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(port);
-  addr.sin_addr.s_addr = INADDR_ANY;
-
-  if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-    perror("bind");
-    exit(1);
-  }
-
-  if (listen(s, 10) < 0) {
-    perror("listen");
-    exit(1);
-  }
-
-  printf("Listening on TCP port %d...\n", port);
-  signal(SIGCHLD, SIG_IGN);
-
-  while (1) {
-    int client = accept(s, NULL, NULL);
-    if (client < 0)
-      continue;
-    if (fork() == 0) {
-      close(s);
-      run_parser(client, client);
-      close(client);
-      exit(0);
-    }
-    close(client);
-  }
+  fclose(ctx.out);
 }
 
 static void daemonize_uds(const char *path) {
@@ -292,7 +239,7 @@ static void daemonize_uds(const char *path) {
       continue;
     if (fork() == 0) {
       close(s);
-      run_parser(client, client);
+      run_parser(client);
       close(client);
       exit(0);
     }
@@ -301,34 +248,15 @@ static void daemonize_uds(const char *path) {
 }
 
 static void print_usage(const char *prog_name) {
-  printf("Usage: %s [OPTIONS]\n\n", prog_name);
-  printf("A language-agnostic Virtual Terminal (VT) escape sequence parser.\n");
-  printf("Reads raw terminal data and emits Newline Delimited JSON (NDJSON) "
+  printf("Usage: %s -s PATH\n\n", prog_name);
+  printf("A language-agnostic Virtual Terminal (VT) escape sequence parser "
+         "daemon.\n");
+  printf("Reads raw terminal data from a Unix Domain Socket and emits NDJSON "
          "events.\n\n");
-
   printf("Options:\n");
-  printf("  -h, --help        Show this help message and exit.\n");
-  printf("  -p PORT           Run as a TCP daemon listening on the specified "
-         "port.\n");
-  printf("  -s PATH           Run as a Unix Domain Socket (UDS) daemon on the "
+  printf("  -h, --help      Show this help message and exit.\n");
+  printf("  -s PATH         Run as a Unix Domain Socket (UDS) daemon on the "
          "specified path.\n\n");
-
-  printf("Modes & Examples:\n");
-  printf("  1. Standard I/O (Default)\n");
-  printf("     Pipes data from STDIN and writes JSON to STDOUT.\n");
-  printf("     Example: echo -n -e '\\x1B[31mRed\\x1B[0m' | %s\n\n", prog_name);
-
-  printf("  2. TCP Daemon\n");
-  printf("     Forks a new parser for each incoming TCP connection.\n");
-  printf("     Example:\n");
-  printf("       Server: %s -p 9000\n", prog_name);
-  printf("       Client: echo -n -e '\\x1B[1mBold' | nc 127.0.0.1 9000\n\n");
-
-  printf("  3. Unix Domain Socket (UDS) Daemon\n");
-  printf("     Forks a new parser for each incoming UDS connection.\n");
-  printf("     Example:\n");
-  printf("       Server: %s -s /tmp/vt.sock\n", prog_name);
-  printf("       Client: echo -n -e '\\x1B[1mBold' | nc -U /tmp/vt.sock\n\n");
 }
 
 int main(int argc, char **argv) {
@@ -336,20 +264,13 @@ int main(int argc, char **argv) {
     if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
       print_usage(argv[0]);
       return 0;
-    } else if (strcmp(argv[1], "-p") == 0 && argc >= 3) {
-      daemonize_tcp(atoi(argv[2]));
-      return 0;
     } else if (strcmp(argv[1], "-s") == 0 && argc >= 3) {
       daemonize_uds(argv[2]);
       return 0;
-    } else {
-      fprintf(stderr, "Error: Invalid arguments.\n\n");
-      print_usage(argv[0]);
-      return 1;
     }
   }
 
-  // Run in standard stdio mode
-  run_parser(STDIN_FILENO, STDOUT_FILENO);
-  return 0;
+  fprintf(stderr, "Error: Invalid arguments.\n\n");
+  print_usage(argv[0]);
+  return 1;
 }
