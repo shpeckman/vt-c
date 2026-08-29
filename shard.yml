@@ -1,0 +1,10 @@
+# shard.yml
+name: vt-client
+version: 0.2.0
+
+authors:
+  - shpeckman <geelenrobin@proton.me>
+
+crystal: '>= 1.21.0'
+
+license: MIT
