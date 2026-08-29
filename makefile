@@ -15,7 +15,7 @@ endif
 .PHONY: all clean test bench daemon install uninstall
 
 # Removed 'clean' from 'all' so binaries are kept after building
-all: test bench daemon
+all: daemon
 
 $(BIN_DIR):
 	@mkdir -p $(BIN_DIR)
