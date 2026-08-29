@@ -253,10 +253,22 @@ static void print_usage(const char *prog_name) {
          "daemon.\n");
   printf("Reads raw terminal data from a Unix Domain Socket and emits NDJSON "
          "events.\n\n");
+
   printf("Options:\n");
   printf("  -h, --help      Show this help message and exit.\n");
   printf("  -s PATH         Run as a Unix Domain Socket (UDS) daemon on the "
          "specified path.\n\n");
+
+  printf("Example Usage:\n");
+  printf("  1. Start the daemon in the background:\n");
+  printf("       %s -s /tmp/vt.sock &\n\n", prog_name);
+
+  printf("  2. Send terminal data and stream NDJSON back (using netcat):\n");
+  printf("       echo -n -e '\\x1B[1mBold' | nc -U /tmp/vt.sock\n\n");
+
+  printf("  3. Using socat (alternative client):\n");
+  printf("       echo -n -e '\\x1B[31mRed\\x1B[0m' | socat - "
+         "UNIX-CONNECT:/tmp/vt.sock\n\n");
 }
 
 int main(int argc, char **argv) {
