@@ -2,6 +2,7 @@
 CC ?= gcc
 CFLAGS ?= -O3 -Wall -Wextra -std=c99 -D_XOPEN_SOURCE=700 -Iinclude
 
+PREFIX ?= /usr/local
 BIN_DIR = bin
 
 BENCH_CFLAGS = $(CFLAGS) -flto -march=native
@@ -11,9 +12,9 @@ ifeq ($(shell uname -s), Darwin)
 	BENCH_CFLAGS += -D__MACH__
 endif
 
-.PHONY: all clean test bench daemon
+.PHONY: all clean test bench daemon install uninstall
 
-all: test bench daemon clean
+all: daemon
 
 $(BIN_DIR):
 	@mkdir -p $(BIN_DIR)
@@ -41,6 +42,13 @@ bench: $(BIN_DIR)/vt_bench
 	@echo
 	
 daemon: $(BIN_DIR)/vt-daemon
+
+install: daemon
+	@install -d $(DESTDIR)$(PREFIX)/bin
+	@install -m 755 $(BIN_DIR)/vt-daemon $(DESTDIR)$(PREFIX)/bin/vt-daemon
+
+uninstall:
+	@rm -f $(DESTDIR)$(PREFIX)/bin/vt-daemon
 
 clean:
 	@rm -rf $(BIN_DIR)
