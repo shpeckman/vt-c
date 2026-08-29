@@ -300,13 +300,56 @@ static void daemonize_uds(const char *path) {
   }
 }
 
+static void print_usage(const char *prog_name) {
+  printf("Usage: %s [OPTIONS]\n\n", prog_name);
+  printf("A language-agnostic Virtual Terminal (VT) escape sequence parser.\n");
+  printf("Reads raw terminal data and emits Newline Delimited JSON (NDJSON) "
+         "events.\n\n");
+
+  printf("Options:\n");
+  printf("  -h, --help        Show this help message and exit.\n");
+  printf("  -p PORT           Run as a TCP daemon listening on the specified "
+         "port.\n");
+  printf("  -s PATH           Run as a Unix Domain Socket (UDS) daemon on the "
+         "specified path.\n\n");
+
+  printf("Modes & Examples:\n");
+  printf("  1. Standard I/O (Default)\n");
+  printf("     Pipes data from STDIN and writes JSON to STDOUT.\n");
+  printf("     Example: echo -n -e '\\x1B[31mRed\\x1B[0m' | %s\n\n", prog_name);
+
+  printf("  2. TCP Daemon\n");
+  printf("     Forks a new parser for each incoming TCP connection.\n");
+  printf("     Example:\n");
+  printf("       Server: %s -p 9000\n", prog_name);
+  printf("       Client: echo -n -e '\\x1B[1mBold' | nc 127.0.0.1 9000\n\n");
+
+  printf("  3. Unix Domain Socket (UDS) Daemon\n");
+  printf("     Forks a new parser for each incoming UDS connection.\n");
+  printf("     Example:\n");
+  printf("       Server: %s -s /tmp/vt.sock\n", prog_name);
+  printf("       Client: echo -n -e '\\x1B[1mBold' | nc -U /tmp/vt.sock\n\n");
+}
+
 int main(int argc, char **argv) {
-  if (argc >= 3 && strcmp(argv[1], "-p") == 0) {
-    daemonize_tcp(atoi(argv[2]));
-  } else if (argc >= 3 && strcmp(argv[1], "-s") == 0) {
-    daemonize_uds(argv[2]);
-  } else {
-    run_parser(STDIN_FILENO, STDOUT_FILENO);
+  if (argc >= 2) {
+    if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
+      print_usage(argv[0]);
+      return 0;
+    } else if (strcmp(argv[1], "-p") == 0 && argc >= 3) {
+      daemonize_tcp(atoi(argv[2]));
+      return 0;
+    } else if (strcmp(argv[1], "-s") == 0 && argc >= 3) {
+      daemonize_uds(argv[2]);
+      return 0;
+    } else {
+      fprintf(stderr, "Error: Invalid arguments.\n\n");
+      print_usage(argv[0]);
+      return 1;
+    }
   }
+
+  // Run in standard stdio mode
+  run_parser(STDIN_FILENO, STDOUT_FILENO);
   return 0;
 }
