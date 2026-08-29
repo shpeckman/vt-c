@@ -15,8 +15,7 @@ endif
 
 .PHONY: all clean test bench daemon install uninstall
 
-# Removed 'clean' from 'all' so binaries are kept after building
-all: daemon
+all: install
 
 $(BIN_DIR):
 	@mkdir -p $(BIN_DIR)
@@ -46,11 +45,11 @@ bench: $(BIN_DIR)/vt_bench
 daemon: $(BIN_DIR)/vt-daemon
 
 install: daemon
-	@install -d $(DESTDIR)$(PREFIX)/bin
-	@install -m 755 $(BIN_DIR)/vt-daemon $(DESTDIR)$(PREFIX)/bin/vt-daemon
+	@sudo install -d $(DESTDIR)$(PREFIX)/bin
+	@sudo install -m 755 $(BIN_DIR)/vt-daemon $(DESTDIR)$(PREFIX)/bin/vt-daemon
 	@if [ -d $(DESTDIR)$(SYSTEMD_DIR) ] || [ -z "$(DESTDIR)" ]; then \
-		install -d $(DESTDIR)$(SYSTEMD_DIR); \
-		install -m 644 vt-daemon.service $(DESTDIR)$(SYSTEMD_DIR)/vt-daemon.service; \
+		sudo install -d $(DESTDIR)$(SYSTEMD_DIR); \
+		sudo install -m 644 vt-daemon.service $(DESTDIR)$(SYSTEMD_DIR)/vt-daemon.service; \
 	fi
 
 uninstall:
