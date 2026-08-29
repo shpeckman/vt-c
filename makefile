@@ -1,6 +1,8 @@
 # makefile
 CC ?= gcc
-CFLAGS ?= -O3 -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=199309L
+# Changed to _XOPEN_SOURCE=700 to ensure POSIX.1-2008 standard features 
+# like fdopen() and network socket structures are natively exposed.
+CFLAGS ?= -O3 -Wall -Wextra -std=c99 -D_XOPEN_SOURCE=700
 
 BIN_DIR = bin
 
