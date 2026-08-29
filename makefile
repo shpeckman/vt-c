@@ -16,7 +16,7 @@ endif
 
 .PHONY: all clean test bench
 
-all: $(BIN_DIR)/test_bin $(BIN_DIR)/bench_bin
+all: test bench clean
 
 # Create the bin directory
 $(BIN_DIR):
